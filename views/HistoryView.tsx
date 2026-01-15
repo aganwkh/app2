@@ -223,44 +223,45 @@ const ImageViewerModal: React.FC<{
 
     return (
         <motion.div 
-            className="fixed inset-0 z-[100] flex items-center justify-center backdrop-blur-xl"
+            className="fixed inset-0 z-[100] flex items-center justify-center backdrop-blur-xl touch-none"
             style={{ backgroundColor: useTransform(bgOpacity, o => `rgba(0,0,0,${o * 0.95})`) }}
             initial={{ backgroundColor: "rgba(0,0,0,0)" }}
             animate={{ backgroundColor: "rgba(0,0,0,0.95)" }}
-            exit={{ backgroundColor: "rgba(0,0,0,0)", transition: { duration: 0.2 } }} // Faster backdrop fade
+            exit={{ backgroundColor: "rgba(0,0,0,0)", transition: { duration: 0.2 } }}
         >
-            <motion.div
-                className="w-full h-full flex items-center justify-center touch-none relative"
-                drag // Enable free 2D drag
-                dragElastic={0.7} // Add resistance
-                dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }} // Elastic snap back logic
-                onDragStart={() => { isDraggingRef.current = true; }}
-                onDragEnd={handleDragEnd}
-                style={{ x, y, scale }}
-                animate={controls}
-                custom={custom}
-                variants={variants}
-                initial="enter"
-                whileInView="center"
-                exit="exit"
-                transition={{
-                    x: { type: "spring", stiffness: 400, damping: 30 }, // Snappier spring
-                    opacity: { duration: 0.2 }
-                }}
-            >
+            <div className="w-full h-full flex items-center justify-center relative">
                 {/* Image */}
                 <motion.img
                     layoutId={`image-${uniqueKey}`} // Shared layout transition
                     src={image.url}
-                    className="max-w-[100vw] max-h-[100vh] object-contain shadow-2xl pointer-events-auto"
+                    className="w-full h-full object-contain shadow-2xl pointer-events-auto cursor-grab active:cursor-grabbing"
+                    
+                    // Interaction Props moved to Image to prevent flickering with layoutId
+                    drag
+                    dragElastic={0.7}
+                    dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+                    onDragStart={() => { isDraggingRef.current = true; }}
+                    onDragEnd={handleDragEnd}
+                    style={{ x, y, scale }}
+                    animate={controls}
+                    custom={custom}
+                    variants={variants}
+                    initial="enter"
+                    whileInView="center"
+                    exit="exit"
+                    
                     onClick={(e) => { 
                         e.stopPropagation(); 
                         if (!isDraggingRef.current) onToggleMeta(); 
                     }}
                     draggable={false}
-                    transition={{ type: "spring", stiffness: 350, damping: 35 }} // Tune the layout transition (zoom speed)
+                    transition={{ 
+                        x: { type: "spring", stiffness: 400, damping: 30 },
+                        opacity: { duration: 0.2 },
+                        layout: { type: "spring", stiffness: 350, damping: 35 }
+                    }}
                 />
-            </motion.div>
+            </div>
 
             {/* Navigation Arrows */}
             {hasPrev && (
@@ -288,15 +289,9 @@ const ImageViewerModal: React.FC<{
                                 >
                                     <Download className="w-4 h-4" /> 保存
                                 </a>
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); onUse(); onClose(); }} 
-                                    className="flex-1 py-3.5 bg-blue-600/80 backdrop-blur-xl text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 active:scale-95 shadow-lg shadow-blue-900/20"
-                                >
-                                    <Layers className="w-4 h-4" /> 引用
-                                </button>
                                 {onDelete && (
-                                    <button onClick={onDelete} className="p-3.5 bg-red-600/20 backdrop-blur-xl text-red-400 rounded-xl font-bold border border-red-500/20 active:scale-95">
-                                        <Trash2 className="w-4 h-4" />
+                                    <button onClick={onDelete} className="flex-1 py-3.5 bg-red-600/20 backdrop-blur-xl text-red-400 rounded-xl font-bold border border-red-500/20 active:scale-95 flex items-center justify-center gap-2">
+                                        <Trash2 className="w-4 h-4" /> 删除
                                     </button>
                                 )}
                             </div>
