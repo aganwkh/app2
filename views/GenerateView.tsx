@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GeneratedImage } from '../types';
-import { Download, Maximize2, X, Aperture, Play, Square, Loader2, Sparkles, Layers } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Download, Maximize2, X, Aperture, Play, Square, Loader2 } from 'lucide-react';
+import { motion, AnimatePresence, useMotionValue, useTransform, useAnimation, PanInfo } from 'framer-motion';
 
 interface GenerateViewProps {
   currentImage: GeneratedImage | null;
@@ -15,177 +15,134 @@ interface GenerateViewProps {
 }
 
 export const GenerateView: React.FC<GenerateViewProps> = ({
-  currentImage,
-  isGenerating,
-  progress,
-  queueSize,
-  onGenerate,
-  onInterrupt,
-  isConnected,
-  hasWorkflow
+  currentImage, isGenerating, progress, queueSize, onGenerate, onInterrupt, isConnected, hasWorkflow
 }) => {
   const [isZoomed, setIsZoomed] = useState(false);
 
-  // Floating Action Button Animation
-  const fabVariants = {
-    initial: { scale: 0, opacity: 0 },
-    animate: { scale: 1, opacity: 1 },
-    tap: { scale: 0.9 },
-  };
+  // --- NATIVE BACK BUTTON HANDLING FOR ZOOM ---
+  useEffect(() => {
+    if (isZoomed) {
+        window.history.pushState({ zoomed: true }, '');
+        const handlePopState = () => setIsZoomed(false);
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }
+  }, [isZoomed]);
+
+  const handleZoomClose = () => window.history.back();
 
   return (
-    // Fixed: min-h-full guarantees background stretch. pb-32 handles the content spacing.
-    // The background color/gradient is applied here to ensure it covers the safe area.
-    <div className="relative w-full min-h-full flex flex-col bg-slate-950">
-        
-        {/* Background Ambience - Fixed to fill screen */}
-        <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[150vw] h-[150vw] bg-blue-900/10 rounded-full blur-[100px]"></div>
-            <div className="absolute bottom-0 left-0 right-0 h-48 bg-gradient-to-t from-slate-950 to-transparent"></div>
-        </div>
-
-        {/* Content Area - Fixed Padding for Mobile to clear Nav */}
+    <div className="relative w-full min-h-full flex flex-col bg-transparent">
         <div className="flex-1 relative z-10 flex items-center justify-center p-6 pb-32">
-            
             <AnimatePresence mode="wait">
                 {isGenerating ? (
-                    <motion.div 
-                        key="generating"
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 1.1 }}
-                        className="relative flex flex-col items-center justify-center p-8 bg-slate-900/80 border border-white/10 rounded-[2rem] backdrop-blur-xl shadow-2xl w-full max-w-[320px] aspect-square"
-                    >
-                         {/* Progress Ring - Mobile Optimized */}
-                        <div className="relative w-48 h-48 mb-6 flex items-center justify-center">
-                            {/* Decorative Outer Glow */}
-                            <div className="absolute -inset-4 bg-blue-500/20 blur-3xl rounded-full animate-pulse" />
+                    <motion.div key="gen" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.1 }} className="flex flex-col items-center justify-center p-8 bg-slate-900/40 border border-white/10 rounded-[2.5rem] backdrop-blur-2xl shadow-2xl aspect-square w-full max-w-[320px]">
+                        <div className="relative w-48 h-48 mb-8 flex items-center justify-center">
+                            {/* Glowing rings */}
+                            <div className="absolute inset-0 border-4 border-blue-500/10 rounded-full animate-[spin_4s_linear_infinite]" />
+                            <div className="absolute inset-4 border-4 border-purple-500/10 rounded-full animate-[spin_3s_linear_infinite_reverse]" />
                             
-                            {/* SVG with overflow-visible */}
-                            <svg className="w-full h-full -rotate-90 drop-shadow-lg overflow-visible" viewBox="0 0 160 160">
-                                {/* Track Background */}
-                                <circle 
-                                    cx="80" cy="80" r="70" 
-                                    stroke="currentColor" 
-                                    strokeWidth="12" 
-                                    fill="transparent" 
-                                    className="text-slate-800" 
-                                />
-                                {/* Progress Indicator */}
-                                <circle 
-                                    cx="80" cy="80" r="70" 
-                                    stroke="currentColor" 
-                                    strokeWidth="12" 
-                                    fill="transparent" 
-                                    className="text-blue-500 transition-all duration-300 ease-out" 
-                                    strokeDasharray={440} 
-                                    strokeDashoffset={440 - (440 * progress) / 100} 
-                                    strokeLinecap="round" 
-                                    style={{ filter: "drop-shadow(0 0 8px rgba(59,130,246,0.6))" }}
-                                />
+                            <svg className="w-full h-full -rotate-90 drop-shadow-[0_0_15px_rgba(59,130,246,0.5)] overflow-visible" viewBox="0 0 160 160">
+                                <circle cx="80" cy="80" r="70" stroke="#1e293b" strokeWidth="8" fill="transparent" className="opacity-20" />
+                                <circle cx="80" cy="80" r="70" stroke="url(#gradient)" strokeWidth="8" fill="transparent" strokeDasharray={440} strokeDashoffset={440 - (440 * progress) / 100} strokeLinecap="round" className="transition-all duration-300 ease-linear" />
+                                <defs>
+                                    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                        <stop offset="0%" stopColor="#3b82f6" />
+                                        <stop offset="100%" stopColor="#a855f7" />
+                                    </linearGradient>
+                                </defs>
                             </svg>
-                            
-                            {/* Center Text */}
                             <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                <span className="text-4xl font-bold text-white font-mono tracking-tighter drop-shadow-md">
-                                    {Math.round(progress)}<span className="text-lg text-blue-400 align-top">%</span>
-                                </span>
-                                {queueSize > 0 && (
-                                    <span className="text-[10px] text-blue-300 mt-1 uppercase tracking-wider font-bold bg-blue-900/30 px-2 py-0.5 rounded-full border border-blue-500/20">
-                                        队列: {queueSize}
-                                    </span>
-                                )}
+                                <span className="text-5xl font-bold text-white font-mono tracking-tighter">{Math.round(progress)}<span className="text-xl text-blue-400">%</span></span>
+                                {queueSize > 0 && <span className="text-[10px] text-blue-200 mt-2 bg-blue-500/20 px-2 py-0.5 rounded-full border border-blue-500/20 backdrop-blur-sm">Queue: {queueSize}</span>}
                             </div>
                         </div>
-                        
-                        <div className="flex flex-col items-center gap-1">
-                            <h3 className="text-lg font-bold text-white tracking-wide animate-pulse">正在生成...</h3>
-                            <p className="text-xs text-slate-500 font-medium">ComfyUI 正在处理节点</p>
-                        </div>
+                        <h3 className="text-base font-medium text-slate-300 animate-pulse tracking-widest uppercase">正在生成</h3>
                     </motion.div>
                 ) : currentImage ? (
-                    <motion.div 
-                        key="result"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="relative group w-full h-full flex items-center justify-center"
-                    >
-                         <img 
+                    <motion.div key="res" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative group w-full h-full flex items-center justify-center">
+                         <div className="absolute -inset-1 bg-gradient-to-r from-blue-500/20 to-purple-500/20 rounded-[2rem] blur-xl opacity-50" />
+                         <motion.img 
+                            layoutId="latest-gen"
                             src={currentImage.url} 
-                            alt="Result" 
-                            className="max-w-full max-h-[70vh] object-contain rounded-xl shadow-2xl border border-white/5 bg-slate-900/50"
+                            className="relative max-w-full max-h-[70vh] object-contain rounded-2xl shadow-2xl border border-white/10 bg-black/20"
                             onClick={() => setIsZoomed(true)}
                         />
-                        
-                        {/* Overlay Controls */}
-                        <div className="absolute bottom-4 right-4 flex gap-2">
-                             <button onClick={() => setIsZoomed(true)} className="bg-black/60 text-white p-3 rounded-full backdrop-blur border border-white/10 shadow-lg active:scale-95 transition-transform">
-                                <Maximize2 className="w-5 h-5" />
-                            </button>
-                        </div>
+                        <button onClick={() => setIsZoomed(true)} className="absolute bottom-6 right-6 bg-black/40 text-white p-3 rounded-full backdrop-blur-md border border-white/10 hover:bg-black/60 transition-colors">
+                            <Maximize2 className="w-5 h-5" />
+                        </button>
                     </motion.div>
                 ) : (
-                    <motion.div 
-                        key="empty"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="text-center space-y-6"
-                    >
-                        <div className="relative w-24 h-24 mx-auto">
-                            <div className="absolute inset-0 bg-blue-500/20 blur-xl rounded-full animate-pulse" />
-                            <div className="relative w-full h-full bg-slate-900 border border-slate-800 rounded-[2rem] flex items-center justify-center shadow-2xl rotate-6 group hover:rotate-0 transition-all duration-500">
-                                <Aperture className="w-10 h-10 text-slate-600 group-hover:text-blue-500 transition-colors duration-500" />
+                    <motion.div key="empty" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center space-y-8">
+                        <div className="relative w-32 h-32 mx-auto">
+                            <div className="absolute inset-0 bg-blue-500/20 rounded-[2rem] blur-2xl animate-pulse" />
+                            <div className="relative w-full h-full bg-slate-900/30 border border-white/10 rounded-[2rem] flex items-center justify-center shadow-2xl backdrop-blur-md">
+                                <Aperture className="w-12 h-12 text-slate-500/80" />
                             </div>
                         </div>
                         <div>
-                            <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">准备就绪</h2>
-                            <p className="text-slate-500 text-sm leading-relaxed max-w-[200px] mx-auto">
-                                点击下方按钮开始生成<br/>AI 创意即刻呈现
-                            </p>
+                            <h2 className="text-2xl font-bold text-white mb-2">ComfyUI Ready</h2>
+                            <p className="text-slate-400 text-sm">点击下方按钮开始创作</p>
                         </div>
                     </motion.div>
                 )}
             </AnimatePresence>
         </div>
 
-        {/* Floating Action Button (FAB) - Fixed Bottom Position for Mobile */}
-        <div className="fixed bottom-24 left-0 right-0 flex justify-center z-40 pointer-events-none">
+        <div className="fixed bottom-24 left-0 right-0 flex justify-center z-40 pointer-events-none px-6">
             <motion.button
-                variants={fabVariants}
-                initial="initial"
-                animate="animate"
-                whileTap="tap"
+                whileTap={{ scale: 0.95 }}
                 onClick={isGenerating ? onInterrupt : onGenerate}
                 disabled={!isConnected || !hasWorkflow}
-                className={`pointer-events-auto shadow-[0_8px_32px_rgba(0,0,0,0.4)] flex items-center gap-2 px-8 py-4 rounded-full font-bold text-lg tracking-wide uppercase transition-all border border-white/10 backdrop-blur-md ${
-                    !isConnected || !hasWorkflow ? 'bg-slate-800/90 text-slate-500 cursor-not-allowed grayscale' :
-                    isGenerating 
-                        ? 'bg-red-500/90 text-white shadow-red-900/30 hover:bg-red-500' 
-                        : 'bg-blue-600/90 text-white shadow-blue-900/30 hover:bg-blue-600'
-                }`}
+                className={`pointer-events-auto w-full max-w-md py-4 rounded-2xl font-bold text-base tracking-wide uppercase shadow-2xl backdrop-blur-xl border border-white/10 flex items-center justify-center gap-3 transition-all ${isGenerating ? 'bg-red-500/20 text-red-200 border-red-500/30 shadow-red-900/20' : 'bg-blue-600/80 text-white shadow-blue-900/40 hover:bg-blue-500/80'}`}
             >
-                {isGenerating ? (
-                    <>
-                        <Square className="w-5 h-5 fill-current" /> <span className="drop-shadow-sm">停止</span>
-                    </>
-                ) : (
-                    <>
-                        <Play className="w-5 h-5 fill-current" /> <span className="drop-shadow-sm">开始生成</span>
-                    </>
-                )}
+                {isGenerating ? <><Square className="w-5 h-5 fill-current"/> 停止生成</> : <><Play className="w-5 h-5 fill-current"/> 开始生成</>}
             </motion.button>
         </div>
 
-        {/* Full Screen Zoom Modal */}
-        {isZoomed && currentImage && (
-            <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex items-center justify-center" onClick={() => setIsZoomed(false)}>
-                <img src={currentImage.url} className="max-w-full max-h-full object-contain" />
-                <button className="absolute top-safe right-4 text-white/70 hover:text-white p-2 bg-black/20 rounded-full backdrop-blur-md mt-4"><X className="w-8 h-8" /></button>
-                <a href={currentImage.url} download className="absolute bottom-10 bg-white text-black px-6 py-3 rounded-full font-bold text-sm shadow-xl flex items-center gap-2 active:scale-95 transition-transform">
-                    <Download className="w-4 h-4" /> 保存图片
-                </a>
-            </div>
-        )}
+        <AnimatePresence>
+            {isZoomed && currentImage && (
+                <ZoomModal image={currentImage} onClose={handleZoomClose} />
+            )}
+        </AnimatePresence>
     </div>
   );
 };
+
+const ZoomModal: React.FC<{ image: GeneratedImage, onClose: () => void }> = ({ image, onClose }) => {
+    const y = useMotionValue(0);
+    const bgOpacity = useTransform(y, [-200, 0, 200], [0, 1, 0]);
+    const scale = useTransform(y, [-200, 0, 200], [0.85, 1, 0.85]);
+    const controls = useAnimation();
+
+    return (
+        <motion.div 
+            className="fixed inset-0 z-[100] flex items-center justify-center backdrop-blur-3xl"
+            style={{ backgroundColor: useTransform(bgOpacity, o => `rgba(0,0,0,${o * 0.6})`) }}
+            initial={{ backgroundColor: "rgba(0,0,0,0)" }}
+            animate={{ backgroundColor: "rgba(0,0,0,0.6)" }}
+            exit={{ backgroundColor: "rgba(0,0,0,0)" }}
+        >
+            <motion.div
+                className="w-full h-full flex items-center justify-center touch-none"
+                drag="y" dragConstraints={{ top: 0, bottom: 0 }} dragElastic={0.7}
+                style={{ y, scale }} animate={controls}
+                onDragEnd={(_, info) => {
+                    if (Math.abs(info.offset.y) > 100) onClose();
+                    else controls.start({ y: 0, scale: 1 });
+                }}
+            >
+                <motion.img 
+                    layoutId="latest-gen"
+                    src={image.url} 
+                    className="max-w-full max-h-full object-contain drop-shadow-2xl"
+                />
+            </motion.div>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute bottom-10 left-0 right-0 flex justify-center pointer-events-none">
+                 <a href={image.url} download className="bg-white/10 backdrop-blur-md border border-white/10 text-white px-8 py-3 rounded-full font-bold text-sm shadow-xl flex items-center gap-2 pointer-events-auto active:scale-95 hover:bg-white/20 transition-colors">
+                    <Download className="w-4 h-4" /> 保存图片
+                </a>
+            </motion.div>
+        </motion.div>
+    );
+}

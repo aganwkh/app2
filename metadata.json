@@ -1,5 +1,5 @@
 {
-  "name": "ComfyUI Remote Commander",
+  "name": "ComfyUI",
   "description": "A modern, dark-themed remote control panel for ComfyUI. Connects directly to your ComfyUI instance via WebSocket/HTTP to manage workflows, edit prompts/seeds, and view generation results in real-time. (Note: Requires ComfyUI to be running with '--enable-cors-header *')",
   "requestFramePermissions": []
 }

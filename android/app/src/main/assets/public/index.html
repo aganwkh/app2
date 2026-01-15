@@ -2,12 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
-    <meta name="theme-color" content="#020617" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f172a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="format-detection" content="telephone=no" />
-    <title>ComfyUI Remote Commander</title>
+    <title>ComfyUI</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -17,14 +17,16 @@
       }
       
       html, body {
-        overscroll-behavior: none; /* Prevent pull-to-refresh */
+        overscroll-behavior: none;
         touch-action: pan-x pan-y;
-        -webkit-tap-highlight-color: transparent; /* Remove tap highlight color */
+        -webkit-tap-highlight-color: transparent;
         height: 100%;
+        width: 100%;
         overflow: hidden;
-        user-select: none; /* Disable text selection globally */
+        user-select: none;
         -webkit-user-select: none;
-        -webkit-touch-callout: none; /* Disable default long-press menu */
+        -webkit-touch-callout: none;
+        background-color: #020617; /* Slate 950 base */
       }
 
       /* Allow text selection only in inputs */
@@ -35,11 +37,9 @@
 
       body {
         font-family: 'Inter', sans-serif;
-        background-color: #020617; /* Slate 950 */
-        color: #e2e8f0; /* Slate 200 */
+        color: #e2e8f0;
       }
 
-      /* Hide Scrollbar but keep functionality */
       .scrollbar-none {
         -ms-overflow-style: none;
         scrollbar-width: none;
@@ -48,39 +48,27 @@
         display: none;
       }
 
-      /* Utilities for Safe Area */
       .pt-safe { padding-top: var(--sat); }
       .pb-safe { padding-bottom: var(--sab); }
       .mb-safe { margin-bottom: var(--sab); }
       .bottom-safe { bottom: var(--sab); }
+      .top-safe { top: var(--sat); }
 
-      /* Custom Mobile Range Slider */
-      input[type=range] {
-        -webkit-appearance: none;
-        background: transparent; 
+      /* Custom Animations for Breathing Background */
+      @keyframes blob {
+        0% { transform: translate(0px, 0px) scale(1); }
+        33% { transform: translate(30px, -50px) scale(1.1); }
+        66% { transform: translate(-20px, 20px) scale(0.9); }
+        100% { transform: translate(0px, 0px) scale(1); }
       }
-      input[type=range]::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        height: 24px;
-        width: 24px;
-        border-radius: 50%;
-        background: #3b82f6;
-        margin-top: -10px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-        border: 2px solid #1e293b;
+      .animate-blob {
+        animation: blob 10s infinite;
       }
-      input[type=range]::-webkit-slider-runnable-track {
-        width: 100%;
-        height: 4px;
-        cursor: pointer;
-        background: #334155;
-        border-radius: 2px;
+      .animation-delay-2000 {
+        animation-delay: 2s;
       }
-      
-      /* Prevents iOS/Android input zoom and optimizes touch */
-      input, textarea, select {
-        font-size: 16px !important; 
-        touch-action: manipulation;
+      .animation-delay-4000 {
+        animation-delay: 4s;
       }
     </style>
 
@@ -98,7 +86,7 @@
   }
 }
 </script>
-  <script type="module" crossorigin src="/assets/index-CjYmA3_8.js"></script>
+  <script type="module" crossorigin src="/assets/index-DiplneKL.js"></script>
 </head>
   <body>
     <div id="root"></div>

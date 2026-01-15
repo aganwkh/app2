@@ -20,6 +20,25 @@ const triggerHaptic = (style: 'light' | 'medium' | 'heavy' | 'success' | 'error'
     }
 };
 
+// --- Ambient Background Component ---
+const AmbientBackground = () => (
+  <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none bg-slate-950">
+    {/* Base Gradient */}
+    <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,119,198,0.1),rgba(255,255,255,0))]" />
+    
+    {/* Breathing Orbs */}
+    <div className="absolute top-0 -left-4 w-96 h-96 bg-purple-500/20 rounded-full mix-blend-screen filter blur-[80px] opacity-30 animate-blob" />
+    <div className="absolute top-0 -right-4 w-96 h-96 bg-indigo-500/20 rounded-full mix-blend-screen filter blur-[80px] opacity-30 animate-blob animation-delay-2000" />
+    <div className="absolute -bottom-32 left-20 w-96 h-96 bg-blue-500/20 rounded-full mix-blend-screen filter blur-[80px] opacity-30 animate-blob animation-delay-4000" />
+    
+    {/* Grid Overlay for texture */}
+    <div className="absolute inset-0 opacity-[0.03]" style={{
+            backgroundImage: `linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)`,
+            backgroundSize: '50px 50px'
+    }}></div>
+  </div>
+);
+
 const App: React.FC = () => {
   // --- UI State ---
   const [activeTab, setActiveTab] = useState<TabType>('generate');
@@ -100,63 +119,25 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
 
-  // 3. WAKE LOCK API (Keep screen on during generation)
+  // 3. WAKE LOCK API
   useEffect(() => {
       const requestWakeLock = async () => {
           if ('wakeLock' in navigator && isGenerating) {
               try {
                   wakeLockRef.current = await navigator.wakeLock.request('screen');
-                  console.log('Screen Wake Lock active');
-              } catch (err) {
-                  console.log('Wake Lock request failed', err);
-              }
+              } catch (err) { console.log('Wake Lock request failed', err); }
           }
       };
-
       const releaseWakeLock = async () => {
           if (wakeLockRef.current) {
               await wakeLockRef.current.release();
               wakeLockRef.current = null;
           }
       };
-
-      if (isGenerating) {
-          requestWakeLock();
-      } else {
-          releaseWakeLock();
-      }
-      
+      if (isGenerating) requestWakeLock();
+      else releaseWakeLock();
       return () => { releaseWakeLock(); };
   }, [isGenerating]);
-
-  // 4. ANDROID BACK BUTTON HANDLING (Intercept History API)
-  useEffect(() => {
-      // Function to handle the "popstate" event (Back button press)
-      const handlePopState = (event: PopStateEvent) => {
-          // If we have an image open (modal), close it
-          if (currentImage && activeTab !== 'history') { // Special case: in Generate view
-               setCurrentImage(null);
-               // Prevent default browser back navigation logic if possible/needed
-               return;
-          }
-          if (currentImage && activeTab === 'history') { // In History view full screen
-               setCurrentImage(null);
-               return;
-          }
-      };
-
-      window.addEventListener('popstate', handlePopState);
-      return () => window.removeEventListener('popstate', handlePopState);
-  }, [currentImage, activeTab]);
-
-  // Push a state when opening an image so "Back" can pop it
-  useEffect(() => {
-      if (currentImage) {
-          // Push a dummy state to history stack
-          window.history.pushState({ modalOpen: true }, '');
-      }
-  }, [currentImage]);
-
 
   // --- Helpers ---
   const getMetadataSnapshot = useCallback(() => ({
@@ -168,22 +149,12 @@ const App: React.FC = () => {
 
   const updateField = (nodeId: string, fieldKey: string, value: string | number) => {
     if (!workflow) return;
-    
-    // Optimistic UI Update
     setDetectedFields(prev => prev.map(f => (f.nodeId === nodeId && f.field === fieldKey) ? { ...f, value } : f));
-    
-    // Deep Workflow Update
     setWorkflow(prevWf => {
         if (!prevWf) return null;
         const newWf = { ...prevWf };
         if (newWf[nodeId] && newWf[nodeId].inputs) {
-            newWf[nodeId] = {
-                ...newWf[nodeId],
-                inputs: {
-                    ...newWf[nodeId].inputs,
-                    [fieldKey]: value
-                }
-            };
+            newWf[nodeId] = { ...newWf[nodeId], inputs: { ...newWf[nodeId].inputs, [fieldKey]: value } };
         }
         return newWf;
     });
@@ -194,7 +165,6 @@ const App: React.FC = () => {
       setWorkflow(prevWf => {
           if (!prevWf) return null;
           const lora = stateRef.current.loras.find(l => l.nodeId === nodeId);
-          // Only update workflow if it's an existing node
           if (lora && !lora.isNew && prevWf[nodeId]) {
               const newWf = { ...prevWf };
               const inputs = { ...newWf[nodeId].inputs };
@@ -213,14 +183,7 @@ const App: React.FC = () => {
       const id = `new-lora-${Date.now()}`;
       setDetectedLoras(prev => [
           ...prev, 
-          { 
-              nodeId: id, 
-              name: availableLoras[0] || "None", 
-              strength_model: 1.0, 
-              strength_clip: 1.0, 
-              isEnabled: true,
-              isNew: true 
-          }
+          { nodeId: id, name: availableLoras[0] || "None", strength_model: 1.0, strength_clip: 1.0, isEnabled: true, isNew: true }
       ]);
   };
 
@@ -239,24 +202,14 @@ const App: React.FC = () => {
           return `<lora:${name}:1.0>`;
       }).join(", ");
       
-      const candidates = detectedFields.filter(f => 
-        f.type === 'prompt' && 
-        f.subType === 'positive'
-      );
-
-      // Fallback if no explicit positive found
+      const candidates = detectedFields.filter(f => f.type === 'prompt' && f.subType === 'positive');
       const targetField = candidates[0] || detectedFields.find(f => f.type === 'prompt' && f.subType !== 'negative' && f.subType !== 'dynamic');
 
       if (targetField) {
           const currentVal = String(targetField.value || "");
-          if (currentVal.includes(triggers)) {
-              alert("LoRA 标签似乎已存在");
-              return;
-          }
-          const newVal = currentVal ? `${currentVal}, ${triggers}` : triggers;
-          
-          updateField(targetField.nodeId, targetField.field, newVal);
-          alert(`已添加 LoRA 标签到 "${targetField.label}"`);
+          if (currentVal.includes(triggers)) { alert("LoRA 标签似乎已存在"); return; }
+          updateField(targetField.nodeId, targetField.field, currentVal ? `${currentVal}, ${triggers}` : triggers);
+          alert(`已添加 LoRA 标签`);
       } else {
           alert("未找到合适的正向提示词输入框");
       }
@@ -283,11 +236,7 @@ const App: React.FC = () => {
     if (event.data instanceof Blob) {
         const blobUrl = URL.createObjectURL(event.data);
         setCurrentImage({
-            filename: 'preview_temp.png',
-            subfolder: '',
-            type: 'preview',
-            url: blobUrl,
-            metadata: getMetadataSnapshot()
+            filename: 'preview_temp.png', subfolder: '', type: 'preview', url: blobUrl, metadata: getMetadataSnapshot()
         });
         return;
     }
@@ -296,9 +245,7 @@ const App: React.FC = () => {
             const msg = JSON.parse(event.data) as WSMessage;
             switch (msg.type) {
                 case 'execution_start':
-                setIsGenerating(true);
-                setProgress(0);
-                triggerHaptic('light');
+                setIsGenerating(true); setProgress(0); triggerHaptic('light');
                 break;
                 case 'progress':
                 if (msg.data.max > 0) setProgress((msg.data.value / msg.data.max) * 100);
@@ -306,38 +253,24 @@ const App: React.FC = () => {
                 case 'executed':
                 if (msg.data.output && msg.data.output.images) {
                     const metadata = getMetadataSnapshot();
-                    
                     const processImages = async () => {
                         const newImages: GeneratedImage[] = [];
-                        
                         for (const imgData of msg.data.output.images) {
                              const serverUrl = serviceRef.current?.getImageUrl(imgData) || '';
-                             
-                             const tempImg: GeneratedImage = {
-                                 id: crypto.randomUUID(), // Assign unique ID
-                                 ...imgData,
-                                 url: serverUrl,
-                                 metadata: metadata
-                             };
-
-                             // Save to Local DB (Async with Compression)
+                             const tempImg: GeneratedImage = { id: crypto.randomUUID(), ...imgData, url: serverUrl, metadata: metadata };
                              const savedImg = await storageService.saveImage(tempImg);
                              newImages.push(savedImg);
                         }
-
                         if (newImages.length > 0) {
                              setCurrentImage(newImages[0]);
                              setHistory(prev => [...prev, ...newImages]);
                         }
                     };
-                    
                     processImages();
                 }
                 break;
                 case 'execution_success':
-                setIsGenerating(false);
-                setProgress(100);
-                triggerHaptic('success'); // Success Vibrate
+                setIsGenerating(false); setProgress(100); triggerHaptic('success');
                 if (queueRef.current) {
                     queueRef.current = false;
                     setQueueSize(prev => Math.max(0, prev - 1));
@@ -345,10 +278,7 @@ const App: React.FC = () => {
                 }
                 break;
                 case 'execution_error':
-                setIsGenerating(false);
-                queueRef.current = false;
-                setQueueSize(0);
-                triggerHaptic('error'); // Error Vibrate
+                setIsGenerating(false); queueRef.current = false; setQueueSize(0); triggerHaptic('error');
                 alert('执行错误: ' + JSON.stringify(msg.data, null, 2));
                 break;
             }
@@ -376,22 +306,14 @@ const App: React.FC = () => {
       () => {
           setConnectionStatus('connected');
           triggerHaptic('success');
-          service.fetchLoras().then(loras => {
-              if (loras && loras.length > 0) setAvailableLoras(loras);
-          });
+          service.fetchLoras().then(loras => { if (loras && loras.length > 0) setAvailableLoras(loras); });
       },
       handleWSMessage,
       () => { setConnectionStatus('disconnected'); setIsGenerating(false); },
-      () => { 
-          setConnectionStatus('disconnected'); 
-          setIsGenerating(false); 
-      }
+      () => { setConnectionStatus('disconnected'); setIsGenerating(false); }
     );
   }, [comfyUrl, isDemoMode, handleWSMessage]);
 
-  /**
-   * ROBUST SCANNING LOGIC
-   */
   const refreshDetectedState = (wf: ComfyWorkflow) => {
     const fields: DetectedField[] = [];
     const models: DetectedModel[] = [];
@@ -402,45 +324,29 @@ const App: React.FC = () => {
       const inputs = node.inputs || {};
       const classType = node.class_type;
       const title = (node._meta?.title || classType).toLowerCase();
-      
       const hasSeed = 'seed' in inputs || 'noise_seed' in inputs;
       const isExplicitDynamic = KNOWN_DYNAMIC_TYPES.includes(classType);
 
-      // --- 1. Text Field Detection ---
-      const textKeys = Object.keys(inputs).filter(k => 
-         TEXT_FIELD_CANDIDATES.includes(k.toLowerCase()) && typeof inputs[k] === 'string'
-      );
+      const textKeys = Object.keys(inputs).filter(k => TEXT_FIELD_CANDIDATES.includes(k.toLowerCase()) && typeof inputs[k] === 'string');
 
       if (textKeys.length > 0) {
           textKeys.forEach(textKey => {
               const valueStr = String(inputs[textKey]).toLowerCase();
               const keyName = textKey.toLowerCase();
-              
               let subType: 'positive' | 'negative' | 'general' | 'dynamic' = 'general';
 
-              if (keyName === 'positive' || keyName === 'text_positive' || keyName === 'text_g') {
-                  subType = 'positive';
-              } else if (keyName === 'negative' || keyName === 'text_negative' || keyName === 'text_l') {
-                  subType = 'negative';
-              } else if (isExplicitDynamic) {
-                  subType = 'dynamic';
-              } else {
-                  let isNeg = false;
-                  let isPos = false;
-
+              if (keyName === 'positive' || keyName === 'text_positive' || keyName === 'text_g') subType = 'positive';
+              else if (keyName === 'negative' || keyName === 'text_negative' || keyName === 'text_l') subType = 'negative';
+              else if (isExplicitDynamic) subType = 'dynamic';
+              else {
+                  let isNeg = false, isPos = false;
                   if (title.includes('negative') || title.includes('负面') || title.includes('uc')) isNeg = true;
-                  if (title.includes('positive') || title.includes('正面') || title.includes('masterpiece')) isPos = true;
-
+                  if (title.includes('positive') || title.includes('正面')) isPos = true;
                   if (!isNeg && !isPos) {
                       if (valueStr.includes('low quality') || valueStr.includes('bad hands') || valueStr.includes('embedding:')) isNeg = true;
                   }
-
-                  if (isNeg) subType = 'negative';
-                  else if (isPos) subType = 'positive';
-                  else if (hasSeed) subType = 'dynamic'; 
-                  else if (title.includes('prompt') || title.includes('clip') || title.includes('text')) subType = 'positive';
+                  if (isNeg) subType = 'negative'; else if (isPos) subType = 'positive'; else if (hasSeed) subType = 'dynamic'; else if (title.includes('prompt') || title.includes('clip')) subType = 'positive';
               }
-              
               let label = node._meta?.title || classType;
               if (textKeys.length > 1) {
                   if (subType === 'positive') label = `${label} (正向)`;
@@ -449,19 +355,10 @@ const App: React.FC = () => {
               } else {
                    if (subType === 'dynamic') label = '动态提示词';
               }
-
-              fields.push({
-                nodeId, 
-                field: textKey, 
-                type: 'prompt', 
-                subType,
-                label: label, 
-                value: inputs[textKey]
-              });
+              fields.push({ nodeId, field: textKey, type: 'prompt', subType, label: label, value: inputs[textKey] });
           });
       }
 
-      // --- 2. Numeric Field Detection ---
       if (SAMPLER_NODE_TYPES.includes(classType)) {
          NUMBER_FIELDS.forEach(conf => {
              if (conf.key in inputs && typeof inputs[conf.key] === 'number') {
@@ -469,27 +366,15 @@ const App: React.FC = () => {
              }
          });
       }
-
-      // --- 3. Model Detection ---
       if (MODEL_NODE_TYPES.CHECKPOINT.includes(classType) && inputs.ckpt_name) {
           models.push({ nodeId, name: inputs.ckpt_name, type: 'checkpoint' });
       }
-      
-      // --- 4. Existing LoRA Detection ---
       if (MODEL_NODE_TYPES.LORA.includes(classType)) {
           if (inputs.lora_name) {
-              loras.push({
-                  nodeId,
-                  name: inputs.lora_name,
-                  strength_model: inputs.strength_model ?? 1.0,
-                  strength_clip: inputs.strength_clip ?? 1.0,
-                  isEnabled: true,
-                  isNew: false 
-              });
+              loras.push({ nodeId, name: inputs.lora_name, strength_model: inputs.strength_model ?? 1.0, strength_clip: inputs.strength_clip ?? 1.0, isEnabled: true, isNew: false });
           }
       }
     });
-
     setDetectedFields(fields);
     setDetectedModels(models);
     setDetectedLoras(loras);
@@ -500,28 +385,19 @@ const App: React.FC = () => {
     reader.onload = (e) => {
       try {
         const json = JSON.parse(e.target?.result as string) as ComfyWorkflow;
-        setWorkflow(json);
-        refreshDetectedState(json); 
-        setActiveTab('parameters');
-        triggerHaptic('success');
+        setWorkflow(json); refreshDetectedState(json); setActiveTab('parameters'); triggerHaptic('success');
       } catch (err) { alert("无效的 JSON 工作流文件"); }
     };
     reader.readAsText(file);
   };
 
-  // --- Generation Logic ---
   const handleGenerate = async () => {
     triggerHaptic('medium');
     if (!workflow) return;
-    if (isGenerating) {
-        queueRef.current = true;
-        setQueueSize(prev => prev + 1);
-        return;
-    }
+    if (isGenerating) { queueRef.current = true; setQueueSize(prev => prev + 1); return; }
     
     let currentWorkflow = JSON.parse(JSON.stringify(workflow));
     
-    // 1. Apply Seeds
     if (autoSeed) {
         const newSeed = Math.floor(Math.random() * 10000000000000);
         setDetectedFields(prev => prev.map(f => SEED_KEYS.includes(f.field) ? { ...f, value: newSeed } : f));
@@ -530,61 +406,40 @@ const App: React.FC = () => {
         });
     }
     
-    // 2. Handle LoRAs
     const uiLoras = detectedLoras; 
-
-    // 2a. Mute removed LoRAs
     Object.keys(currentWorkflow).forEach(nodeId => {
         const node = currentWorkflow[nodeId];
         if (MODEL_NODE_TYPES.LORA.includes(node.class_type)) {
             const stillExists = uiLoras.some(l => l.nodeId === nodeId);
-            if (!stillExists && node.inputs) {
-                node.inputs.strength_model = 0;
-                node.inputs.strength_clip = 0;
-            }
+            if (!stillExists && node.inputs) { node.inputs.strength_model = 0; node.inputs.strength_clip = 0; }
         }
     });
 
-    // 2b. Update existing LoRAs
     uiLoras.filter(l => !l.isNew).forEach(lora => {
         const node = currentWorkflow[lora.nodeId];
         if (node && node.inputs) {
-            node.inputs.lora_name = lora.name;
-            node.inputs.strength_model = lora.strength_model;
-            node.inputs.strength_clip = lora.strength_clip;
+            node.inputs.lora_name = lora.name; node.inputs.strength_model = lora.strength_model; node.inputs.strength_clip = lora.strength_clip;
         }
     });
 
-    // 2c. Inject New LoRAs
     const newLoras = uiLoras.filter(l => l.isNew);
     if (newLoras.length > 0) {
         const injectedWf = injectLorasIntoWorkflow(currentWorkflow, newLoras);
-        if (injectedWf) {
-             currentWorkflow = injectedWf;
-        } else {
-             console.warn("LoRA injection skipped due to missing checkpoint loader.");
-             alert("警告: 无法自动插入新 LoRA，因为未找到标准 Checkpoint Loader 节点。仅应用了现有参数修改。");
-        }
+        if (injectedWf) currentWorkflow = injectedWf;
+        else { alert("警告: 无法自动插入新 LoRA"); }
     }
 
     setActiveTab('generate');
     
-    if (isDemoMode) { 
-        runMockGeneration(); 
-        return; 
-    }
-    
-    if (!serviceRef.current || connectionStatus !== 'connected') {
-        alert("未连接到 ComfyUI");
-        return;
-    }
+    if (isDemoMode) { runMockGeneration(); return; }
+    if (!serviceRef.current || connectionStatus !== 'connected') { alert("未连接到 ComfyUI"); return; }
 
     try {
       setIsGenerating(true);
       await serviceRef.current.queuePrompt(currentWorkflow);
     } catch (e) { 
         triggerHaptic('error');
-        alert("发送任务失败。请检查 ComfyUI 是否允许跨域连接 (--enable-cors-header *)"); 
+        alert("发送任务失败。"); 
         setIsGenerating(false); 
     }
   };
@@ -592,41 +447,25 @@ const App: React.FC = () => {
   const injectLorasIntoWorkflow = (baseWorkflow: ComfyWorkflow, lorasToInject: DetectedLora[]) => {
       if (lorasToInject.length === 0) return baseWorkflow;
       const newWorkflow = JSON.parse(JSON.stringify(baseWorkflow)) as ComfyWorkflow;
-      
-      const checkpointNodeId = Object.keys(newWorkflow).find(key => 
-          MODEL_NODE_TYPES.CHECKPOINT.includes(newWorkflow[key].class_type)
-      );
-      
-      if (!checkpointNodeId) {
-          return null;
-      }
+      const checkpointNodeId = Object.keys(newWorkflow).find(key => MODEL_NODE_TYPES.CHECKPOINT.includes(newWorkflow[key].class_type));
+      if (!checkpointNodeId) return null;
 
       let currentModelSource: [string, number] = [checkpointNodeId, 0];
       let currentClipSource: [string, number] = [checkpointNodeId, 1];
 
-      // Create chain
       lorasToInject.forEach((lora, index) => {
           const newId = `injected_lora_${Date.now()}_${index}`;
           newWorkflow[newId] = {
               class_type: "LoraLoader",
-              inputs: {
-                  lora_name: lora.name,
-                  strength_model: lora.strength_model,
-                  strength_clip: lora.strength_clip,
-                  model: currentModelSource,
-                  clip: currentClipSource
-              }
+              inputs: { lora_name: lora.name, strength_model: lora.strength_model, strength_clip: lora.strength_clip, model: currentModelSource, clip: currentClipSource }
           };
-          currentModelSource = [newId, 0];
-          currentClipSource = [newId, 1];
+          currentModelSource = [newId, 0]; currentClipSource = [newId, 1];
       });
 
-      // Rewire inputs
       Object.keys(newWorkflow).forEach(nodeId => {
           if (nodeId.startsWith("injected_lora_")) return;
           const node = newWorkflow[nodeId];
           if (!node.inputs) return;
-
           Object.keys(node.inputs).forEach(inputKey => {
               const val = node.inputs[inputKey];
               if (Array.isArray(val) && val.length === 2 && val[0] === checkpointNodeId) {
@@ -635,44 +474,28 @@ const App: React.FC = () => {
               }
           });
       });
-
       return newWorkflow;
   };
 
   const runMockGeneration = () => {
-    setIsGenerating(true);
-    setProgress(0);
+    setIsGenerating(true); setProgress(0);
     const metadata = getMetadataSnapshot();
     let p = 0;
     const interval = setInterval(() => {
-      p += 2; 
-      setProgress(Math.min(p, 99));
+      p += 2; setProgress(Math.min(p, 99));
       if (p >= 100) {
-        clearInterval(interval);
-        setIsGenerating(false);
-        setProgress(100);
-        triggerHaptic('success');
+        clearInterval(interval); setIsGenerating(false); setProgress(100); triggerHaptic('success');
         const mockImg: GeneratedImage = {
-          id: crypto.randomUUID(),
-          filename: `demo-${Date.now()}.png`, subfolder: '', type: 'output',
-          url: `https://picsum.photos/1024/1792?random=${Date.now()}`, metadata: metadata
+          id: crypto.randomUUID(), filename: `demo-${Date.now()}.png`, subfolder: '', type: 'output', url: `https://picsum.photos/1024/1792?random=${Date.now()}`, metadata: metadata
         };
-        // Mock saving for demo
-        setCurrentImage(mockImg);
-        setHistory(prev => [...prev, mockImg]);
-        if (queueRef.current) {
-             queueRef.current = false;
-             setQueueSize(prev => Math.max(0, prev - 1));
-             setTimeout(() => handleGenerate(), 500);
-        }
+        setCurrentImage(mockImg); setHistory(prev => [...prev, mockImg]);
+        if (queueRef.current) { queueRef.current = false; setQueueSize(prev => Math.max(0, prev - 1)); setTimeout(() => handleGenerate(), 500); }
       }
     }, 50);
   };
 
   const handleInterrupt = async () => {
-      triggerHaptic('medium');
-      queueRef.current = false;
-      setQueueSize(0);
+      triggerHaptic('medium'); queueRef.current = false; setQueueSize(0);
       if (isDemoMode) { setIsGenerating(false); setProgress(0); return; }
       if (serviceRef.current) await serviceRef.current.interrupt();
   };
@@ -680,96 +503,47 @@ const App: React.FC = () => {
   const handleHistorySelect = (img: GeneratedImage) => {
       triggerHaptic('light');
       setCurrentImage(img);
-      if (img.metadata) {
-             if (img.metadata.fields) setDetectedFields(img.metadata.fields);
-             if (img.metadata.loras) setDetectedLoras(img.metadata.loras);
-             if (workflow) {
-                 const newWorkflow = JSON.parse(JSON.stringify(workflow));
-                 img.metadata.fields?.forEach(f => {
-                     const node = newWorkflow[f.nodeId];
-                     if (node && node.inputs) node.inputs[f.field] = f.value;
-                 });
-                 img.metadata.loras?.forEach(l => {
-                     if (!l.isNew) {
-                        const node = newWorkflow[l.nodeId];
-                        if (node && node.inputs) {
-                            node.inputs.lora_name = l.name;
-                            node.inputs.strength_model = l.strength_model;
-                            node.inputs.strength_clip = l.strength_clip;
-                        }
-                     }
-                 });
-                 setWorkflow(newWorkflow);
-             }
+      if (img.metadata && workflow) {
+             const newWorkflow = JSON.parse(JSON.stringify(workflow));
+             img.metadata.fields?.forEach(f => {
+                 const node = newWorkflow[f.nodeId]; if (node && node.inputs) node.inputs[f.field] = f.value;
+             });
+             setWorkflow(newWorkflow);
       }
       setActiveTab('generate');
   };
   
-  const onTabChange = (tab: TabType) => {
-      triggerHaptic('light');
-      setActiveTab(tab);
-      // Close modal when switching tabs to avoid state confusion
-      setCurrentImage(null);
-  }
+  const onTabChange = (tab: TabType) => { triggerHaptic('light'); setActiveTab(tab); setCurrentImage(null); }
 
   return (
-    <div className="flex flex-col h-[100dvh] bg-slate-950 text-slate-100 font-sans selection:bg-blue-500/30 overflow-hidden">
-      
-      <div className={`flex-1 overflow-y-auto scrollbar-none pt-safe ${activeTab === 'generate' ? 'pb-0' : 'pb-32'}`}>
-        <main className="min-h-full h-full flex flex-col">
-            {activeTab === 'parameters' && (
-                <ParametersView
-                    comfyUrl={comfyUrl}
-                    setComfyUrl={setComfyUrl}
-                    isDemoMode={isDemoMode}
-                    setIsDemoMode={setIsDemoMode}
-                    connectionStatus={connectionStatus}
-                    onConnect={connect}
-                    onFileUpload={handleFileUpload}
-                    detectedFields={detectedFields}
-                    detectedModels={detectedModels}
-                    detectedLoras={detectedLoras}
-                    availableLoras={availableLoras}
-                    onFieldChange={updateField}
-                    onLoraChange={updateLora}
-                    autoSeed={autoSeed}
-                    setAutoSeed={setAutoSeed}
-                    onAddLora={addLora}
-                    onRemoveLora={removeLora}
-                    onCopyTriggers={copyTriggerWords}
-                />
-            )}
-            {activeTab === 'generate' && (
-                <GenerateView
-                    currentImage={currentImage}
-                    isGenerating={isGenerating}
-                    progress={progress}
-                    queueSize={queueSize}
-                    onGenerate={handleGenerate}
-                    onInterrupt={handleInterrupt}
-                    isConnected={isDemoMode || connectionStatus === 'connected'}
-                    hasWorkflow={!!workflow}
-                />
-            )}
-            {activeTab === 'history' && (
-                <HistoryView
-                    history={history}
-                    onSelect={handleHistorySelect}
-                    onClear={handleClearHistory}
-                    onDelete={handleDeleteImage}
-                />
-            )}
-        </main>
+    <>
+      <AmbientBackground />
+      <div className="relative flex flex-col h-[100dvh] bg-transparent text-slate-100 font-sans selection:bg-purple-500/30 overflow-hidden z-10">
+        {/* REMOVED 'pt-safe' here to allow immersive headers in children */}
+        <div className={`flex-1 overflow-y-auto scrollbar-none ${activeTab === 'generate' ? 'pb-0' : 'pb-32'}`}>
+          <main className="min-h-full h-full flex flex-col">
+              {activeTab === 'parameters' && (
+                  <ParametersView
+                      comfyUrl={comfyUrl} setComfyUrl={setComfyUrl} isDemoMode={isDemoMode} setIsDemoMode={setIsDemoMode} connectionStatus={connectionStatus}
+                      onConnect={connect} onFileUpload={handleFileUpload} detectedFields={detectedFields} detectedModels={detectedModels}
+                      detectedLoras={detectedLoras} availableLoras={availableLoras} onFieldChange={updateField} onLoraChange={updateLora}
+                      autoSeed={autoSeed} setAutoSeed={setAutoSeed} onAddLora={addLora} onRemoveLora={removeLora} onCopyTriggers={copyTriggerWords}
+                  />
+              )}
+              {activeTab === 'generate' && (
+                  <GenerateView
+                      currentImage={currentImage} isGenerating={isGenerating} progress={progress} queueSize={queueSize}
+                      onGenerate={handleGenerate} onInterrupt={handleInterrupt} isConnected={isDemoMode || connectionStatus === 'connected'} hasWorkflow={!!workflow}
+                  />
+              )}
+              {activeTab === 'history' && (
+                  <HistoryView history={history} onSelect={handleHistorySelect} onClear={handleClearHistory} onDelete={handleDeleteImage} />
+              )}
+          </main>
+        </div>
+        <Navigation activeTab={activeTab} onTabChange={onTabChange} isGenerating={isGenerating} queueSize={queueSize} />
       </div>
-
-      <Navigation 
-        activeTab={activeTab} 
-        onTabChange={onTabChange}
-        isGenerating={isGenerating}
-        queueSize={queueSize}
-      />
-    </div>
+    </>
   );
 };
-
 export default App;
