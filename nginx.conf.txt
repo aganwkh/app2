@@ -1,0 +1,43 @@
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    # Serve the React Frontend (Assuming build is in /var/www/comfy-remote)
+    location / {
+        root /var/www/comfy-remote;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Proxy API requests to local ComfyUI instance
+    location /api/ {
+        # Rewrite /api/prompt -> /prompt if needed, 
+        # but ComfyUI usually lives at root. 
+        # If your ComfyUrl in app is "https://your-domain.com/api", use rewrite.
+        # If your ComfyUrl is just "https://your-domain.com", use the block below directly at /
+        
+        proxy_pass http://127.0.0.1:8188/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # Proxy WebSocket (Crucial for progress & status)
+    location /ws {
+        proxy_pass http://127.0.0.1:8188/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+    }
+
+    # Proxy View Images
+    location /view {
+        proxy_pass http://127.0.0.1:8188/view;
+    }
+    
+    location /upload {
+        proxy_pass http://127.0.0.1:8188/upload;
+        client_max_body_size 100M;
+    }
+}
