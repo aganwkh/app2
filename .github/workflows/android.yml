@@ -1,6 +1,5 @@
 name: Build Android APK
 
-# 触发条件：推送到主分支，或者手动点击按钮触发
 on:
   push:
     branches: [ main, master ]
@@ -16,14 +15,14 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      # 2. 设置 Java 17 环境 (安卓编译硬性要求)
+      # 2. 设置 Java 21 (对应你的 source release: 21 报错)
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '21'
 
-      # 3. 设置 Node.js 环境
+      # 3. 设置 Node.js 22 (对应你的 Capacitor CLI 报错)
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -33,28 +32,25 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      # 5. 编译网页代码 (生成 dist 目录)
+      # 5. 编译网页
       - name: Build Web Assets
         run: npm run build
 
-      # 6. 同步资源到安卓目录
-      # 注意：这一步依赖于你必须把 android 文件夹提交到 GitHub
+      # 6. 同步资源
       - name: Sync Capacitor
         run: npx cap sync android
 
-      # 7. 打包 APK
+      # 7. 打包 (包含权限修复)
       - name: Build APK (Debug)
         run: |
           cd android
-          # 赋予执行权限，防止 Windows 上传后权限丢失
           chmod +x gradlew
-          # 开始编译
           ./gradlew assembleDebug
 
-      # 8. 上传产物供下载
+      # 8. 上传
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: my-app-debug
+          name: app-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
