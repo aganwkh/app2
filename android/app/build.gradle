@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.comfyui.app"
+    namespace = "com.wanxiangzhi.remote"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.comfyui.app"
+        applicationId "com.wanxiangzhi.remote"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

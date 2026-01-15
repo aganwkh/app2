@@ -2,10 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#020617" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="format-detection" content="telephone=no" />
     <title>ComfyUI Remote Commander</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -18,9 +19,18 @@
       html, body {
         overscroll-behavior: none; /* Prevent pull-to-refresh */
         touch-action: pan-x pan-y;
-        -webkit-tap-highlight-color: transparent;
+        -webkit-tap-highlight-color: transparent; /* Remove tap highlight color */
         height: 100%;
-        overflow: hidden; /* App-like feel */
+        overflow: hidden;
+        user-select: none; /* Disable text selection globally */
+        -webkit-user-select: none;
+        -webkit-touch-callout: none; /* Disable default long-press menu */
+      }
+
+      /* Allow text selection only in inputs */
+      input, textarea {
+        user-select: text;
+        -webkit-user-select: text;
       }
 
       body {
@@ -67,9 +77,10 @@
         border-radius: 2px;
       }
       
-      /* Prevents iOS input zoom */
+      /* Prevents iOS/Android input zoom and optimizes touch */
       input, textarea, select {
         font-size: 16px !important; 
+        touch-action: manipulation;
       }
     </style>
 
@@ -87,7 +98,7 @@
   }
 }
 </script>
-  <script type="module" crossorigin src="/assets/index-Bd0OK5ZV.js"></script>
+  <script type="module" crossorigin src="/assets/index-CjYmA3_8.js"></script>
 </head>
   <body>
     <div id="root"></div>

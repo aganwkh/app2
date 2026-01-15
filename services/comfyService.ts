@@ -24,16 +24,28 @@ export class ComfyService {
   } | null = null;
 
   constructor(baseUrl: string) {
-    this.baseUrl = baseUrl.replace(/\/$/, ""); // Remove trailing slash
+    let url = baseUrl.replace(/\/$/, ""); // Remove trailing slash
+
+    // FIX: Force protocol to HTTP/HTTPS for fetch API compatibility in WebView/Browsers.
+    // fetch() cannot handle 'ws://' or 'wss://' schemes.
+    if (url.startsWith("wss://")) {
+      url = "https://" + url.substring(6);
+    } else if (url.startsWith("ws://")) {
+      url = "http://" + url.substring(5);
+    }
+
+    this.baseUrl = url;
   }
 
   getWsUrl(): string {
     try {
       const url = new URL(this.baseUrl);
+      // Automatically convert http/https back to ws/wss for the WebSocket connection
       const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
       const path = url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
       return `${protocol}//${url.host}${path}/ws?clientId=${this.clientId}`;
     } catch (e) {
+      // Fallback for manual string parsing if URL object fails
       const protocol = this.baseUrl.startsWith('https') ? 'wss' : 'ws';
       const host = this.baseUrl.replace(/^https?:\/\//, '');
       return `${protocol}://${host}/ws?clientId=${this.clientId}`;
@@ -152,6 +164,7 @@ export class ComfyService {
       return Array.isArray(loraNames) ? loraNames : [];
     } catch (e) {
       // Quiet fail on fetch to avoid UI disruption
+      console.warn("LoRA fetch failed (likely network or CORS):", e);
       return [];
     }
   }

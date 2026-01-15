@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">ComfyUI</string>
-    <string name="title_activity_main">ComfyUI</string>
-    <string name="package_name">com.comfyui.app</string>
-    <string name="custom_url_scheme">com.comfyui.app</string>
+    <string name="app_name">RemoteApp</string>
+    <string name="title_activity_main">RemoteApp</string>
+    <string name="package_name">com.wanxiangzhi.remote</string>
+    <string name="custom_url_scheme">com.wanxiangzhi.remote</string>
 </resources>

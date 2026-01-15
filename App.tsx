@@ -8,6 +8,18 @@ import { storageService } from './services/storageService';
 import { DEFAULT_COMFY_URL, SAMPLER_NODE_TYPES, MODEL_NODE_TYPES, NUMBER_FIELDS, SEED_KEYS, TEXT_FIELD_CANDIDATES } from './constants';
 import { ComfyWorkflow, DetectedField, DetectedModel, DetectedLora, GeneratedImage, WSMessage } from './types';
 
+// Helper for Haptic Feedback
+const triggerHaptic = (style: 'light' | 'medium' | 'heavy' | 'success' | 'error' = 'light') => {
+    if (!navigator.vibrate) return;
+    switch (style) {
+        case 'light': navigator.vibrate(10); break;
+        case 'medium': navigator.vibrate(20); break;
+        case 'heavy': navigator.vibrate(40); break;
+        case 'success': navigator.vibrate([10, 30, 10]); break;
+        case 'error': navigator.vibrate([30, 50, 30]); break;
+    }
+};
+
 const App: React.FC = () => {
   // --- UI State ---
   const [activeTab, setActiveTab] = useState<TabType>('generate');
@@ -40,11 +52,14 @@ const App: React.FC = () => {
   
   const serviceRef = useRef<ComfyService | null>(null);
   const queueRef = useRef<boolean>(false); 
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   
   // Ref to hold the latest state for callbacks
   const stateRef = useRef({ fields: detectedFields, models: detectedModels, loras: detectedLoras });
 
   // --- Effects ---
+  
+  // 1. Storage Persistence
   useEffect(() => {
     localStorage.setItem('comfy_url', comfyUrl);
     localStorage.setItem('is_demo_mode', String(isDemoMode));
@@ -60,7 +75,7 @@ const App: React.FC = () => {
     stateRef.current = { fields: detectedFields, models: detectedModels, loras: detectedLoras };
   }, [detectedFields, detectedModels, detectedLoras]);
 
-  // INITIAL LOAD
+  // 2. Initial Load & Visibility
   useEffect(() => {
     if (workflow) {
         refreshDetectedState(workflow);
@@ -71,19 +86,77 @@ const App: React.FC = () => {
             setHistory(savedHistory);
         }
     });
+
+    // Auto-reconnect on app foreground
+    const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+            if (!isDemoMode && serviceRef.current && connectionStatus === 'disconnected') {
+                connect();
+            }
+        }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
 
-  // Handle Page Visibility Change (Auto-reconnect logic)
+  // 3. WAKE LOCK API (Keep screen on during generation)
   useEffect(() => {
-      const handleVisibilityChange = () => {
-          if (document.visibilityState === 'visible') {
-              // Optional: Trigger a ping or check status
+      const requestWakeLock = async () => {
+          if ('wakeLock' in navigator && isGenerating) {
+              try {
+                  wakeLockRef.current = await navigator.wakeLock.request('screen');
+                  console.log('Screen Wake Lock active');
+              } catch (err) {
+                  console.log('Wake Lock request failed', err);
+              }
           }
       };
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-      return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
+
+      const releaseWakeLock = async () => {
+          if (wakeLockRef.current) {
+              await wakeLockRef.current.release();
+              wakeLockRef.current = null;
+          }
+      };
+
+      if (isGenerating) {
+          requestWakeLock();
+      } else {
+          releaseWakeLock();
+      }
+      
+      return () => { releaseWakeLock(); };
+  }, [isGenerating]);
+
+  // 4. ANDROID BACK BUTTON HANDLING (Intercept History API)
+  useEffect(() => {
+      // Function to handle the "popstate" event (Back button press)
+      const handlePopState = (event: PopStateEvent) => {
+          // If we have an image open (modal), close it
+          if (currentImage && activeTab !== 'history') { // Special case: in Generate view
+               setCurrentImage(null);
+               // Prevent default browser back navigation logic if possible/needed
+               return;
+          }
+          if (currentImage && activeTab === 'history') { // In History view full screen
+               setCurrentImage(null);
+               return;
+          }
+      };
+
+      window.addEventListener('popstate', handlePopState);
+      return () => window.removeEventListener('popstate', handlePopState);
+  }, [currentImage, activeTab]);
+
+  // Push a state when opening an image so "Back" can pop it
+  useEffect(() => {
+      if (currentImage) {
+          // Push a dummy state to history stack
+          window.history.pushState({ modalOpen: true }, '');
+      }
+  }, [currentImage]);
+
 
   // --- Helpers ---
   const getMetadataSnapshot = useCallback(() => ({
@@ -136,6 +209,7 @@ const App: React.FC = () => {
   };
 
   const addLora = () => {
+      triggerHaptic('light');
       const id = `new-lora-${Date.now()}`;
       setDetectedLoras(prev => [
           ...prev, 
@@ -151,10 +225,12 @@ const App: React.FC = () => {
   };
 
   const removeLora = (nodeId: string) => {
+      triggerHaptic('light');
       setDetectedLoras(prev => prev.filter(l => l.nodeId !== nodeId));
   };
 
   const copyTriggerWords = () => {
+      triggerHaptic('success');
       const activeLoras = detectedLoras.filter(l => l.isEnabled && l.name !== "None");
       if (activeLoras.length === 0) return;
 
@@ -187,6 +263,7 @@ const App: React.FC = () => {
   };
 
   const handleClearHistory = async () => {
+      triggerHaptic('medium');
       if (confirm("确定要清空所有历史记录吗？")) {
           await storageService.clearHistory();
           setHistory([]);
@@ -194,6 +271,7 @@ const App: React.FC = () => {
   };
 
   const handleDeleteImage = async (img: GeneratedImage) => {
+      triggerHaptic('medium');
       if (img.id) {
           const newHistory = await storageService.deleteImage(img.id);
           setHistory(newHistory);
@@ -220,6 +298,7 @@ const App: React.FC = () => {
                 case 'execution_start':
                 setIsGenerating(true);
                 setProgress(0);
+                triggerHaptic('light');
                 break;
                 case 'progress':
                 if (msg.data.max > 0) setProgress((msg.data.value / msg.data.max) * 100);
@@ -258,6 +337,7 @@ const App: React.FC = () => {
                 case 'execution_success':
                 setIsGenerating(false);
                 setProgress(100);
+                triggerHaptic('success'); // Success Vibrate
                 if (queueRef.current) {
                     queueRef.current = false;
                     setQueueSize(prev => Math.max(0, prev - 1));
@@ -268,6 +348,7 @@ const App: React.FC = () => {
                 setIsGenerating(false);
                 queueRef.current = false;
                 setQueueSize(0);
+                triggerHaptic('error'); // Error Vibrate
                 alert('执行错误: ' + JSON.stringify(msg.data, null, 2));
                 break;
             }
@@ -276,11 +357,13 @@ const App: React.FC = () => {
   }, [getMetadataSnapshot]);
 
   const connect = useCallback(() => {
+    triggerHaptic('light');
     if (isDemoMode) {
       setConnectionStatus('connecting');
       setTimeout(() => {
           setConnectionStatus('connected');
           setAvailableLoras(['demo_style_v1.safetensors', 'lighting_fix.safetensors', 'anime_outline.safetensors']);
+          triggerHaptic('success');
       }, 600);
       return;
     }
@@ -292,6 +375,7 @@ const App: React.FC = () => {
     service.connect(
       () => {
           setConnectionStatus('connected');
+          triggerHaptic('success');
           service.fetchLoras().then(loras => {
               if (loras && loras.length > 0) setAvailableLoras(loras);
           });
@@ -419,6 +503,7 @@ const App: React.FC = () => {
         setWorkflow(json);
         refreshDetectedState(json); 
         setActiveTab('parameters');
+        triggerHaptic('success');
       } catch (err) { alert("无效的 JSON 工作流文件"); }
     };
     reader.readAsText(file);
@@ -426,6 +511,7 @@ const App: React.FC = () => {
 
   // --- Generation Logic ---
   const handleGenerate = async () => {
+    triggerHaptic('medium');
     if (!workflow) return;
     if (isGenerating) {
         queueRef.current = true;
@@ -497,6 +583,7 @@ const App: React.FC = () => {
       setIsGenerating(true);
       await serviceRef.current.queuePrompt(currentWorkflow);
     } catch (e) { 
+        triggerHaptic('error');
         alert("发送任务失败。请检查 ComfyUI 是否允许跨域连接 (--enable-cors-header *)"); 
         setIsGenerating(false); 
     }
@@ -564,6 +651,7 @@ const App: React.FC = () => {
         clearInterval(interval);
         setIsGenerating(false);
         setProgress(100);
+        triggerHaptic('success');
         const mockImg: GeneratedImage = {
           id: crypto.randomUUID(),
           filename: `demo-${Date.now()}.png`, subfolder: '', type: 'output',
@@ -582,6 +670,7 @@ const App: React.FC = () => {
   };
 
   const handleInterrupt = async () => {
+      triggerHaptic('medium');
       queueRef.current = false;
       setQueueSize(0);
       if (isDemoMode) { setIsGenerating(false); setProgress(0); return; }
@@ -589,6 +678,7 @@ const App: React.FC = () => {
   };
 
   const handleHistorySelect = (img: GeneratedImage) => {
+      triggerHaptic('light');
       setCurrentImage(img);
       if (img.metadata) {
              if (img.metadata.fields) setDetectedFields(img.metadata.fields);
@@ -614,6 +704,13 @@ const App: React.FC = () => {
       }
       setActiveTab('generate');
   };
+  
+  const onTabChange = (tab: TabType) => {
+      triggerHaptic('light');
+      setActiveTab(tab);
+      // Close modal when switching tabs to avoid state confusion
+      setCurrentImage(null);
+  }
 
   return (
     <div className="flex flex-col h-[100dvh] bg-slate-950 text-slate-100 font-sans selection:bg-blue-500/30 overflow-hidden">
@@ -667,7 +764,7 @@ const App: React.FC = () => {
 
       <Navigation 
         activeTab={activeTab} 
-        onTabChange={setActiveTab}
+        onTabChange={onTabChange}
         isGenerating={isGenerating}
         queueSize={queueSize}
       />
