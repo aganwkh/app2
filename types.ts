@@ -56,6 +56,7 @@ export interface ImageMetadata {
 }
 
 export interface GeneratedImage {
+  id?: string; // Unique ID for local storage
   filename: string;
   subfolder: string;
   type: string;

@@ -1,4 +1,4 @@
-package com.wanxiangzhi.app;
+package com.comfyui.app;
 
 import com.getcapacitor.BridgeActivity;
 

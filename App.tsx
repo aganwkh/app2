@@ -4,6 +4,7 @@ import { ParametersView } from './views/ParametersView';
 import { GenerateView } from './views/GenerateView';
 import { HistoryView } from './views/HistoryView';
 import { ComfyService } from './services/comfyService';
+import { storageService } from './services/storageService';
 import { DEFAULT_COMFY_URL, SAMPLER_NODE_TYPES, MODEL_NODE_TYPES, NUMBER_FIELDS, SEED_KEYS, TEXT_FIELD_CANDIDATES } from './constants';
 import { ComfyWorkflow, DetectedField, DetectedModel, DetectedLora, GeneratedImage, WSMessage } from './types';
 
@@ -64,6 +65,12 @@ const App: React.FC = () => {
     if (workflow) {
         refreshDetectedState(workflow);
     }
+    // Load local history from IndexedDB
+    storageService.loadHistory().then(savedHistory => {
+        if (savedHistory.length > 0) {
+            setHistory(savedHistory);
+        }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
 
@@ -179,6 +186,20 @@ const App: React.FC = () => {
       }
   };
 
+  const handleClearHistory = async () => {
+      if (confirm("确定要清空所有历史记录吗？")) {
+          await storageService.clearHistory();
+          setHistory([]);
+      }
+  };
+
+  const handleDeleteImage = async (img: GeneratedImage) => {
+      if (img.id) {
+          const newHistory = await storageService.deleteImage(img.id);
+          setHistory(newHistory);
+      }
+  };
+
   // --- WebSocket Logic ---
   const handleWSMessage = useCallback((event: MessageEvent) => {
     if (event.data instanceof Blob) {
@@ -206,15 +227,32 @@ const App: React.FC = () => {
                 case 'executed':
                 if (msg.data.output && msg.data.output.images) {
                     const metadata = getMetadataSnapshot();
-                    const newImages = msg.data.output.images.map((img: any) => ({
-                    ...img,
-                    url: serviceRef.current?.getImageUrl(img),
-                    metadata: metadata
-                    }));
-                    if (newImages.length > 0) {
-                        setCurrentImage(newImages[0]);
-                        setHistory(prev => [...prev, ...newImages]);
-                    }
+                    
+                    const processImages = async () => {
+                        const newImages: GeneratedImage[] = [];
+                        
+                        for (const imgData of msg.data.output.images) {
+                             const serverUrl = serviceRef.current?.getImageUrl(imgData) || '';
+                             
+                             const tempImg: GeneratedImage = {
+                                 id: crypto.randomUUID(), // Assign unique ID
+                                 ...imgData,
+                                 url: serverUrl,
+                                 metadata: metadata
+                             };
+
+                             // Save to Local DB (Async with Compression)
+                             const savedImg = await storageService.saveImage(tempImg);
+                             newImages.push(savedImg);
+                        }
+
+                        if (newImages.length > 0) {
+                             setCurrentImage(newImages[0]);
+                             setHistory(prev => [...prev, ...newImages]);
+                        }
+                    };
+                    
+                    processImages();
                 }
                 break;
                 case 'execution_success':
@@ -223,7 +261,6 @@ const App: React.FC = () => {
                 if (queueRef.current) {
                     queueRef.current = false;
                     setQueueSize(prev => Math.max(0, prev - 1));
-                    // Small delay to ensure state is clean before next run
                     setTimeout(() => handleGenerate(), 300); 
                 }
                 break;
@@ -255,7 +292,6 @@ const App: React.FC = () => {
     service.connect(
       () => {
           setConnectionStatus('connected');
-          // Fetch LoRAs immediately upon connection
           service.fetchLoras().then(loras => {
               if (loras && loras.length > 0) setAvailableLoras(loras);
           });
@@ -270,12 +306,7 @@ const App: React.FC = () => {
   }, [comfyUrl, isDemoMode, handleWSMessage]);
 
   /**
-   * ROBUST SCANNING LOGIC - REFACTORED
-   * Scans all nodes for:
-   * 1. Checkpoints
-   * 2. LoRAs
-   * 3. Multiple Text Inputs per node (e.g., Efficient Loader with positive & negative)
-   * 4. Numeric Inputs
+   * ROBUST SCANNING LOGIC
    */
   const refreshDetectedState = (wf: ComfyWorkflow) => {
     const fields: DetectedField[] = [];
@@ -291,7 +322,7 @@ const App: React.FC = () => {
       const hasSeed = 'seed' in inputs || 'noise_seed' in inputs;
       const isExplicitDynamic = KNOWN_DYNAMIC_TYPES.includes(classType);
 
-      // --- 1. Text Field Detection (Multi-field support) ---
+      // --- 1. Text Field Detection ---
       const textKeys = Object.keys(inputs).filter(k => 
          TEXT_FIELD_CANDIDATES.includes(k.toLowerCase()) && typeof inputs[k] === 'string'
       );
@@ -303,8 +334,6 @@ const App: React.FC = () => {
               
               let subType: 'positive' | 'negative' | 'general' | 'dynamic' = 'general';
 
-              // Improved Classification Logic
-              // Priority 1: Field Name (Efficient Loader uses 'positive', 'negative' explicitly)
               if (keyName === 'positive' || keyName === 'text_positive' || keyName === 'text_g') {
                   subType = 'positive';
               } else if (keyName === 'negative' || keyName === 'text_negative' || keyName === 'text_l') {
@@ -312,7 +341,6 @@ const App: React.FC = () => {
               } else if (isExplicitDynamic) {
                   subType = 'dynamic';
               } else {
-                  // Priority 2: Node Title / Heuristics
                   let isNeg = false;
                   let isPos = false;
 
@@ -320,7 +348,6 @@ const App: React.FC = () => {
                   if (title.includes('positive') || title.includes('正面') || title.includes('masterpiece')) isPos = true;
 
                   if (!isNeg && !isPos) {
-                      // Priority 3: Content Heuristics
                       if (valueStr.includes('low quality') || valueStr.includes('bad hands') || valueStr.includes('embedding:')) isNeg = true;
                   }
 
@@ -330,15 +357,12 @@ const App: React.FC = () => {
                   else if (title.includes('prompt') || title.includes('clip') || title.includes('text')) subType = 'positive';
               }
               
-              // Smart Labeling
               let label = node._meta?.title || classType;
               if (textKeys.length > 1) {
-                  // If node has multiple inputs, clarify which is which
                   if (subType === 'positive') label = `${label} (正向)`;
                   else if (subType === 'negative') label = `${label} (负面)`;
                   else label = `${label} (${textKey})`;
               } else {
-                   // Clean labels for single field nodes
                    if (subType === 'dynamic') label = '动态提示词';
               }
 
@@ -423,7 +447,7 @@ const App: React.FC = () => {
     // 2. Handle LoRAs
     const uiLoras = detectedLoras; 
 
-    // 2a. Mute removed LoRAs (set strength to 0)
+    // 2a. Mute removed LoRAs
     Object.keys(currentWorkflow).forEach(nodeId => {
         const node = currentWorkflow[nodeId];
         if (MODEL_NODE_TYPES.LORA.includes(node.class_type)) {
@@ -445,16 +469,14 @@ const App: React.FC = () => {
         }
     });
 
-    // 2c. Inject New LoRAs - SAFETY CHECK
+    // 2c. Inject New LoRAs
     const newLoras = uiLoras.filter(l => l.isNew);
     if (newLoras.length > 0) {
-        // Attempt injection
         const injectedWf = injectLorasIntoWorkflow(currentWorkflow, newLoras);
         if (injectedWf) {
              currentWorkflow = injectedWf;
         } else {
              console.warn("LoRA injection skipped due to missing checkpoint loader.");
-             // We do NOT stop generation, we just proceed without the NEW LoRAs to prevent errors.
              alert("警告: 无法自动插入新 LoRA，因为未找到标准 Checkpoint Loader 节点。仅应用了现有参数修改。");
         }
     }
@@ -484,14 +506,11 @@ const App: React.FC = () => {
       if (lorasToInject.length === 0) return baseWorkflow;
       const newWorkflow = JSON.parse(JSON.stringify(baseWorkflow)) as ComfyWorkflow;
       
-      // Find a valid Checkpoint Loader to start the chain
-      // We look for any node class that is in our Known Checkpoint Types
       const checkpointNodeId = Object.keys(newWorkflow).find(key => 
           MODEL_NODE_TYPES.CHECKPOINT.includes(newWorkflow[key].class_type)
       );
       
       if (!checkpointNodeId) {
-          // If no standard checkpoint loader found (e.g. user uses a custom one we don't know), return null
           return null;
       }
 
@@ -515,7 +534,7 @@ const App: React.FC = () => {
           currentClipSource = [newId, 1];
       });
 
-      // Rewire inputs that were connected to the checkpoint to now connect to the end of LoRA chain
+      // Rewire inputs
       Object.keys(newWorkflow).forEach(nodeId => {
           if (nodeId.startsWith("injected_lora_")) return;
           const node = newWorkflow[nodeId];
@@ -523,10 +542,9 @@ const App: React.FC = () => {
 
           Object.keys(node.inputs).forEach(inputKey => {
               const val = node.inputs[inputKey];
-              // Check if input is a link (array) and points to the checkpoint
               if (Array.isArray(val) && val.length === 2 && val[0] === checkpointNodeId) {
-                  if (val[1] === 0) node.inputs[inputKey] = currentModelSource; // Model link
-                  if (val[1] === 1) node.inputs[inputKey] = currentClipSource;  // CLIP link
+                  if (val[1] === 0) node.inputs[inputKey] = currentModelSource;
+                  if (val[1] === 1) node.inputs[inputKey] = currentClipSource;
               }
           });
       });
@@ -547,9 +565,11 @@ const App: React.FC = () => {
         setIsGenerating(false);
         setProgress(100);
         const mockImg: GeneratedImage = {
+          id: crypto.randomUUID(),
           filename: `demo-${Date.now()}.png`, subfolder: '', type: 'output',
           url: `https://picsum.photos/1024/1792?random=${Date.now()}`, metadata: metadata
         };
+        // Mock saving for demo
         setCurrentImage(mockImg);
         setHistory(prev => [...prev, mockImg]);
         if (queueRef.current) {
@@ -575,12 +595,10 @@ const App: React.FC = () => {
              if (img.metadata.loras) setDetectedLoras(img.metadata.loras);
              if (workflow) {
                  const newWorkflow = JSON.parse(JSON.stringify(workflow));
-                 // Restore Fields
                  img.metadata.fields?.forEach(f => {
                      const node = newWorkflow[f.nodeId];
                      if (node && node.inputs) node.inputs[f.field] = f.value;
                  });
-                 // Restore LoRAs (Only existing ones, cannot restore injected structure easily)
                  img.metadata.loras?.forEach(l => {
                      if (!l.isNew) {
                         const node = newWorkflow[l.nodeId];
@@ -598,8 +616,6 @@ const App: React.FC = () => {
   };
 
   return (
-    // Fixed: h-[100dvh] ensures it fits exact viewport on mobile including address bar behavior
-    // Fixed: Removed global pb-safe. Padding is now handled by inner containers conditionally.
     <div className="flex flex-col h-[100dvh] bg-slate-950 text-slate-100 font-sans selection:bg-blue-500/30 overflow-hidden">
       
       <div className={`flex-1 overflow-y-auto scrollbar-none pt-safe ${activeTab === 'generate' ? 'pb-0' : 'pb-32'}`}>
@@ -642,7 +658,8 @@ const App: React.FC = () => {
                 <HistoryView
                     history={history}
                     onSelect={handleHistorySelect}
-                    onClear={() => setHistory([])}
+                    onClear={handleClearHistory}
+                    onDelete={handleDeleteImage}
                 />
             )}
         </main>

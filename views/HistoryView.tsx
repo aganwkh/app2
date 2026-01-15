@@ -7,6 +7,7 @@ interface HistoryViewProps {
   history: GeneratedImage[];
   onSelect: (img: GeneratedImage) => void;
   onClear: () => void;
+  onDelete?: (img: GeneratedImage) => void;
 }
 
 const swipeConfidenceThreshold = 10000;
@@ -14,7 +15,7 @@ const swipePower = (offset: number, velocity: number) => {
   return Math.abs(offset) * velocity;
 };
 
-export const HistoryView: React.FC<HistoryViewProps> = ({ history, onSelect, onClear }) => {
+export const HistoryView: React.FC<HistoryViewProps> = ({ history, onSelect, onClear, onDelete }) => {
   // Store index instead of object to facilitate navigation
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [direction, setDirection] = useState(0); // -1 for prev, 1 for next
@@ -37,8 +38,24 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history, onSelect, onC
         setSelectedIndex(newIndex);
     }
   };
+  
+  const handleDeleteCurrent = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (selectedImage && onDelete) {
+          if (confirm("确定要删除这张图片吗？")) {
+              onDelete(selectedImage);
+              // Adjust selection index after deletion
+              if (reversedHistory.length <= 1) {
+                  setSelectedIndex(null);
+              } else if (selectedIndex >= reversedHistory.length - 1) {
+                  setSelectedIndex(reversedHistory.length - 2);
+              }
+              // Force strict mode react render update visually if needed
+          }
+      }
+  };
 
-  // Keyboard navigation support (bonus for hybrid usage, though mobile focus)
+  // Keyboard navigation support
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (selectedIndex === null) return;
@@ -95,6 +112,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history, onSelect, onC
                 <button 
                     onClick={onClear}
                     className="p-2 bg-slate-900/50 text-slate-400 hover:text-red-400 rounded-full transition-colors border border-white/5 active:scale-95 active:bg-red-500/10"
+                    title="清空所有"
                 >
                     <Trash2 className="w-4 h-4" />
                 </button>
@@ -117,10 +135,11 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history, onSelect, onC
                     // Extract minimal metadata for display
                     const seed = img.metadata?.fields.find(f => f.field === 'seed' || f.field === 'noise_seed')?.value;
                     const timestamp = img.metadata?.timestamp;
+                    const key = img.id || `${img.filename}-${idx}`;
                     
                     return (
                         <div 
-                            key={`${img.filename}-${idx}`}
+                            key={key}
                             onClick={() => { setSelectedIndex(idx); setDirection(0); }}
                             className="group relative aspect-[4/5] bg-slate-900 overflow-hidden cursor-pointer active:opacity-90 transition-opacity"
                         >
@@ -173,18 +192,29 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history, onSelect, onC
                         <span className="text-white/50 text-xs font-mono pt-3 pl-2">
                              {reversedHistory.length - selectedIndex} / {reversedHistory.length}
                         </span>
-                        <button 
-                            onClick={() => setSelectedIndex(null)}
-                            className="p-3 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 active:scale-95 transition-all shadow-lg pointer-events-auto"
-                        >
-                            <X className="w-5 h-5" />
-                        </button>
+                        
+                        <div className="flex gap-3 pointer-events-auto">
+                            {onDelete && (
+                                <button 
+                                    onClick={handleDeleteCurrent}
+                                    className="p-3 bg-red-500/20 backdrop-blur-md rounded-full text-red-400 hover:bg-red-500/30 active:scale-95 transition-all shadow-lg border border-red-500/20"
+                                >
+                                    <Trash2 className="w-5 h-5" />
+                                </button>
+                            )}
+                            <button 
+                                onClick={() => setSelectedIndex(null)}
+                                className="p-3 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 active:scale-95 transition-all shadow-lg"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
                     </div>
 
                     {/* Main Image Area with Swipe Gestures */}
                     <div className="flex-1 flex items-center justify-center overflow-hidden relative w-full h-full">
                         
-                        {/* Navigation Hints (Optional, mostly for visual balance) */}
+                        {/* Navigation Hints */}
                         {selectedIndex > 0 && (
                             <button onClick={() => paginate(-1)} className="absolute left-2 z-20 p-2 text-white/30 hover:text-white transition-colors bg-black/20 backdrop-blur rounded-full">
                                 <ChevronLeft className="w-6 h-6" />
@@ -198,7 +228,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history, onSelect, onC
 
                         <AnimatePresence initial={false} custom={direction} mode="popLayout">
                             <motion.img
-                                key={selectedImage.filename} // Key change triggers animation
+                                key={selectedImage.id || selectedImage.filename}
                                 src={selectedImage.url}
                                 custom={direction}
                                 variants={variants}
@@ -256,7 +286,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history, onSelect, onC
                         <div className="flex gap-3">
                              <a 
                                 href={selectedImage.url} 
-                                download={`comfy-gen-${Date.now()}.png`}
+                                download={`comfy-gen-${Date.now()}.jpg`}
                                 className="flex-1 py-3.5 bg-white/10 backdrop-blur-md text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 border border-white/10 active:scale-95 transition-all"
                              >
                                 <Download className="w-4 h-4" /> 保存
